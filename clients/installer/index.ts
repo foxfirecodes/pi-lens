@@ -56,6 +56,12 @@ import path from "node:path";
 import { createGunzip } from "node:zlib";
 import { isTestMode } from "../env-utils.js";
 import { getGlobalPiLensDir } from "../file-utils.js";
+import {
+	allowUnpinnedPackageInstalls,
+	allowUnverifiedGitHubInstalls,
+	buildToolEnvironment,
+	isExactPackageSpecifier,
+} from "../security-policy.js";
 
 // Global installation directory for pi-lens tools
 const TOOLS_DIR = path.join(getGlobalPiLensDir(), "tools");
@@ -1448,6 +1454,12 @@ function runCommand(
 async function installGitHubTool(
 	tool: ToolDefinition,
 ): Promise<string | undefined> {
+	if (!allowUnverifiedGitHubInstalls()) {
+		logSessionStart(
+			`github-install ${tool.id}: skipped unverified GitHub release install (set PI_LENS_ALLOW_UNVERIFIED_GITHUB_INSTALLS=1 or PI_LENS_TRUST_WORKSPACE=1 to allow)`,
+		);
+		return undefined;
+	}
 	const spec = tool.github;
 	if (!spec) return undefined;
 
@@ -1668,6 +1680,12 @@ async function installNpmTool(
 	packageName: string,
 	binaryName: string,
 ): Promise<string | undefined> {
+	if (!isExactPackageSpecifier(packageName) && !allowUnpinnedPackageInstalls()) {
+		logSessionStart(
+			`auto-install npm ${packageName}: skipped unpinned package (set PI_LENS_ALLOW_UNPINNED_INSTALLS=1 or PI_LENS_TRUST_WORKSPACE=1 to allow)`,
+		);
+		return undefined;
+	}
 	try {
 		// Ensure tools directory exists
 		await fs.mkdir(TOOLS_DIR, { recursive: true });
@@ -1703,6 +1721,7 @@ async function installNpmTool(
 			new Promise((resolve) => {
 				const proc = spawn(pm, args, {
 					cwd: TOOLS_DIR,
+					env: buildToolEnvironment(),
 					stdio: ["ignore", "pipe", "pipe"],
 					shell: isWindows, // Required for .cmd files on Windows
 				});
@@ -1813,6 +1832,12 @@ async function installNpmTool(
 async function installPipTool(
 	packageName: string,
 ): Promise<string | undefined> {
+	if (!isExactPackageSpecifier(packageName) && !allowUnpinnedPackageInstalls()) {
+		logSessionStart(
+			`auto-install pip ${packageName}: skipped unpinned package (set PI_LENS_ALLOW_UNPINNED_INSTALLS=1 or PI_LENS_TRUST_WORKSPACE=1 to allow)`,
+		);
+		return undefined;
+	}
 	try {
 		const isWindows = process.platform === "win32";
 		const pipCandidates = isWindows
@@ -1845,6 +1870,7 @@ async function installPipTool(
 			const outcome = await new Promise<{ ok: boolean; error: string }>(
 				(resolve) => {
 					const proc = spawn(candidate.command, candidate.args, {
+						env: buildToolEnvironment(),
 						stdio: ["ignore", "pipe", "pipe"],
 						shell: isWindows, // Required for .cmd files on Windows
 					});
@@ -1962,11 +1988,18 @@ async function installPipTool(
 async function installGemTool(
 	packageName: string,
 ): Promise<string | undefined> {
+	if (!isExactPackageSpecifier(packageName) && !allowUnpinnedPackageInstalls()) {
+		logSessionStart(
+			`auto-install gem ${packageName}: skipped unpinned package (set PI_LENS_ALLOW_UNPINNED_INSTALLS=1 or PI_LENS_TRUST_WORKSPACE=1 to allow)`,
+		);
+		return undefined;
+	}
 	try {
 		const isWindows = process.platform === "win32";
 		const outcome = await new Promise<{ ok: boolean; error: string }>(
 			(resolve) => {
 				const proc = spawn("gem", ["install", packageName, "--no-document"], {
+					env: buildToolEnvironment(),
 					stdio: ["ignore", "pipe", "pipe"],
 					shell: isWindows,
 				});
@@ -2193,8 +2226,9 @@ export async function ensureTool(
  */
 export async function getToolEnvironment(): Promise<NodeJS.ProcessEnv> {
 	const localBin = path.join(TOOLS_DIR, "node_modules", ".bin");
+	const baseEnv = buildToolEnvironment();
 	const currentPath =
-		process.env.PATH || process.env.Path || process.env.path || "";
+		baseEnv.PATH || baseEnv.Path || baseEnv.path || "";
 	const separator = process.platform === "win32" ? ";" : ":";
 	const nodeDir = path.dirname(process.execPath);
 	const withNode = nodeDir
@@ -2203,7 +2237,7 @@ export async function getToolEnvironment(): Promise<NodeJS.ProcessEnv> {
 	const augmentedPath = `${GITHUB_BIN_DIR}${separator}${localBin}${separator}${withNode}`;
 
 	const env: NodeJS.ProcessEnv = {
-		...process.env,
+		...baseEnv,
 		PATH: augmentedPath,
 	};
 

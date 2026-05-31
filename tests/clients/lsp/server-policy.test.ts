@@ -567,7 +567,9 @@ describe("lsp server policy", () => {
 		expect(launchViaPackageManager).not.toHaveBeenCalled();
 	});
 
-	it("keeps custom LSP config scoped per workspace", async () => {
+	it("keeps custom LSP config scoped per workspace when repo LSP commands are trusted", async () => {
+		const previousTrust = process.env.PI_LENS_TRUST_WORKSPACE;
+		process.env.PI_LENS_TRUST_WORKSPACE = "1";
 		const { getServersForFileWithConfig, initLSPConfig } = await import(
 			"../../../clients/lsp/config.js"
 		);
@@ -636,6 +638,8 @@ describe("lsp server policy", () => {
 		expect(serversB).toContain("workspaceBOnly");
 		expect(serversB).not.toContain("workspaceAOnly");
 		expect(tsServersA).not.toContain("typescript");
+		if (previousTrust === undefined) delete process.env.PI_LENS_TRUST_WORKSPACE;
+		else process.env.PI_LENS_TRUST_WORKSPACE = previousTrust;
 	});
 
 	it("launches pyright-langserver from managed pyright install", async () => {

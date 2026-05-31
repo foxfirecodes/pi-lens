@@ -13,6 +13,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { logLatency } from "./latency-logger.js";
 import { safeSpawn, safeSpawnAsync } from "./safe-spawn.js";
+import { allowProjectLocalTools } from "./security-policy.js";
 import {
 	getAutoInstallToolIdForFormatter,
 	getFormatterPolicyForFile,
@@ -167,6 +168,7 @@ async function resolveGoFmtBinary(): Promise<string | null> {
  * Returns the absolute path if found, null otherwise.
  */
 async function findInVenv(binary: string, cwd: string): Promise<string | null> {
+	if (!allowProjectLocalTools()) return null;
 	const isWin = process.platform === "win32";
 	const candidates = isWin
 		? [
@@ -199,6 +201,7 @@ async function findInVendorBin(
 	binary: string,
 	cwd: string,
 ): Promise<string | null> {
+	if (!allowProjectLocalTools()) return null;
 	const isWin = process.platform === "win32";
 	const names = isWin ? [`${binary}.bat`, binary] : [binary];
 	let dir = cwd;
@@ -223,6 +226,7 @@ async function findInNodeModules(
 	binary: string,
 	cwd: string,
 ): Promise<string | null> {
+	if (!allowProjectLocalTools()) return null;
 	const isWin = process.platform === "win32";
 	let dir = cwd;
 	const root = path.parse(dir).root;
@@ -800,7 +804,9 @@ export const psscriptanalyzerFormatFormatter: FormatterInfo = {
 			pwsh,
 			"-NoProfile",
 			"-Command",
-			`$content = Get-Content -Raw '${filePath}'; $formatted = Invoke-Formatter -ScriptDefinition $content; Set-Content -Path '${filePath}' -Value $formatted`,
+			"$p = $args[0]; $content = Get-Content -Raw -LiteralPath $p; $formatted = Invoke-Formatter -ScriptDefinition $content; Set-Content -LiteralPath $p -Value $formatted",
+			"--",
+			filePath,
 		];
 	},
 	async detect(_cwd: string) {

@@ -13,6 +13,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { isFileKind } from "./file-kinds.js";
 import { safeSpawn, safeSpawnAsync } from "./safe-spawn.js";
+import { allowProjectLocalTools } from "./security-policy.js";
 
 // --- Types ---
 
@@ -80,18 +81,20 @@ export class BiomeClient {
 			"node_modules",
 			".bin",
 		);
+		const projectCandidates = allowProjectLocalTools()
+			? isWin
+				? [
+						path.join(resolveCwd, "node_modules", ".bin", "biome.cmd"),
+						path.join(resolveCwd, "node_modules", ".bin", "biome"),
+					]
+				: [
+						path.join(resolveCwd, "node_modules", ".bin", "biome"),
+						path.join(resolveCwd, "node_modules", ".bin", "biome.cmd"),
+					]
+			: [];
 		const candidates = isWin
-			? [
-					path.join(resolveCwd, "node_modules", ".bin", "biome.cmd"),
-					path.join(resolveCwd, "node_modules", ".bin", "biome"),
-					path.join(piLensBin, "biome.cmd"),
-					path.join(piLensBin, "biome"),
-				]
-			: [
-					path.join(resolveCwd, "node_modules", ".bin", "biome"),
-					path.join(resolveCwd, "node_modules", ".bin", "biome.cmd"),
-					path.join(piLensBin, "biome"),
-				];
+			? [...projectCandidates, path.join(piLensBin, "biome.cmd"), path.join(piLensBin, "biome")]
+			: [...projectCandidates, path.join(piLensBin, "biome")];
 		for (const p of candidates) {
 			if (fs.existsSync(p)) {
 				this.localBinaryByCwd.set(resolveCwd, p);

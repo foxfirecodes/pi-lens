@@ -30,8 +30,9 @@ describe("getProjectDataDir", () => {
 		expect(result.startsWith(path.join(cwd, ".pi-lens"))).toBe(false);
 	});
 
-	it("reuses an existing legacy project .pi-lens directory when no env override is set", () => {
+	it("ignores an existing legacy project .pi-lens directory by default", () => {
 		delete process.env.PILENS_DATA_DIR;
+		delete process.env.PI_LENS_ALLOW_LEGACY_PROJECT_DATA_DIR;
 		const cwd = fs.mkdtempSync(
 			path.join(os.tmpdir(), "pi-lens-legacy-project-"),
 		);
@@ -40,7 +41,26 @@ describe("getProjectDataDir", () => {
 
 		const result = getProjectDataDir(cwd);
 
-		expect(result).toBe(legacyDir);
+		expect(result).not.toBe(legacyDir);
+		expect(result.startsWith(path.join(os.homedir(), ".pi-lens", "projects"))).toBe(true);
+	});
+
+	it("reuses an existing legacy project .pi-lens directory only when explicitly trusted", () => {
+		delete process.env.PILENS_DATA_DIR;
+		const previous = process.env.PI_LENS_ALLOW_LEGACY_PROJECT_DATA_DIR;
+		process.env.PI_LENS_ALLOW_LEGACY_PROJECT_DATA_DIR = "1";
+		const cwd = fs.mkdtempSync(
+			path.join(os.tmpdir(), "pi-lens-legacy-project-"),
+		);
+		const legacyDir = path.join(cwd, ".pi-lens");
+		fs.mkdirSync(legacyDir, { recursive: true });
+		try {
+			const result = getProjectDataDir(cwd);
+			expect(result).toBe(legacyDir);
+		} finally {
+			if (previous === undefined) delete process.env.PI_LENS_ALLOW_LEGACY_PROJECT_DATA_DIR;
+			else process.env.PI_LENS_ALLOW_LEGACY_PROJECT_DATA_DIR = previous;
+		}
 	});
 
 	it("uses PILENS_DATA_DIR when provided", () => {

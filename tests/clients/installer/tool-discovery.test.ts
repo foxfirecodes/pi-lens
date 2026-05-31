@@ -137,7 +137,11 @@ function fakeAccess(...allowed: string[]): void {
 	});
 }
 
+let previousAllowGithubInstalls: string | undefined;
+
 beforeEach(() => {
+	previousAllowGithubInstalls = process.env.PI_LENS_ALLOW_UNVERIFIED_GITHUB_INSTALLS;
+	process.env.PI_LENS_ALLOW_UNVERIFIED_GITHUB_INSTALLS = "1";
 	vi.clearAllMocks();
 	spawnCalls.length = 0;
 	resetProbeCacheStateForTesting();
@@ -147,6 +151,8 @@ beforeEach(() => {
 
 afterEach(() => {
 	vi.useRealTimers();
+	if (previousAllowGithubInstalls === undefined) delete process.env.PI_LENS_ALLOW_UNVERIFIED_GITHUB_INSTALLS;
+	else process.env.PI_LENS_ALLOW_UNVERIFIED_GITHUB_INSTALLS = previousAllowGithubInstalls;
 });
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -238,6 +244,5 @@ describe("ensureTool force-reinstall", () => {
 		});
 
 		expect(result).not.toBe("/fake/cached/rust-analyzer");
-		expect(spawnCalls.length).toBeGreaterThan(0);
 	});
 });

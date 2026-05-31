@@ -13,6 +13,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { safeSpawnAsync } from "./safe-spawn.js";
+import { allowProjectLocalTools } from "./security-policy.js";
 
 // --- Types ---
 
@@ -257,7 +258,9 @@ export class KnipClient {
 		const separator = process.platform === "win32" ? ";" : ":";
 		const currentPath = env.PATH || env.Path || process.env.PATH || "";
 		const localBin = path.join(targetDir, "node_modules", ".bin");
-		const augmentedPath = `${localBin}${separator}${currentPath}`;
+		const augmentedPath = allowProjectLocalTools()
+			? `${localBin}${separator}${currentPath}`
+			: currentPath;
 
 		return {
 			...env,

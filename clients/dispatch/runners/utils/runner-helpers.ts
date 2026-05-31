@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { getGlobalPiLensDir } from "../../../file-utils.js";
 import { ensureTool } from "../../../installer/index.js";
 import { safeSpawn, safeSpawnAsync } from "../../../safe-spawn.js";
+import { allowProjectLocalTools } from "../../../security-policy.js";
 import {
 	getToolCommandSpec,
 	shouldAutoInstallTool,
@@ -73,10 +74,12 @@ export function createVenvFinder(
 			`venv/Scripts/${command}${windowsExt}`,
 		];
 
-		for (const venvPath of venvPaths) {
-			const fullPath = path.join(cwd, venvPath);
-			if (fs.existsSync(fullPath)) {
-				return quoteWindows && windowsExt ? `"${fullPath}"` : fullPath;
+		if (allowProjectLocalTools()) {
+			for (const venvPath of venvPaths) {
+				const fullPath = path.join(cwd, venvPath);
+				if (fs.existsSync(fullPath)) {
+					return quoteWindows && windowsExt ? `"${fullPath}"` : fullPath;
+				}
 			}
 		}
 
@@ -180,7 +183,7 @@ export function resolveNodeToolCommand(
 	const isWin = process.platform === "win32";
 	const binName = isWin ? `${toolName}${windowsExt}` : toolName;
 	const local = path.join(cwd, "node_modules", ".bin", binName);
-	if (fs.existsSync(local)) return local;
+	if (allowProjectLocalTools() && fs.existsSync(local)) return local;
 	return toolName;
 }
 
@@ -414,7 +417,7 @@ function buildSgLocalBins(): string[] {
 	);
 	const binRoots = [
 		...findNodeBinRoots(_thisDir),
-		...findNodeBinRoots(process.cwd()),
+		...(allowProjectLocalTools() ? findNodeBinRoots(process.cwd()) : []),
 		_managedToolsDir,
 	];
 	const bins: string[] = [];
@@ -524,9 +527,9 @@ export function resolveLocalFirst(
 	const isWin = process.platform === "win32";
 	const binName = isWin ? `${toolName}${windowsExt}` : toolName;
 
-	// 1. Local node_modules/.bin (project-installed)
+	// 1. Local node_modules/.bin (project-installed, trusted workspaces only)
 	const local = path.join(cwd, "node_modules", ".bin", binName);
-	if (fs.existsSync(local)) return { cmd: local, args: [] };
+	if (allowProjectLocalTools() && fs.existsSync(local)) return { cmd: local, args: [] };
 
 	// 2. Global PATH (already installed system-wide)
 	const globalCheck = safeSpawn(toolName, ["--version"], { timeout: 3000 });
@@ -546,9 +549,9 @@ export async function resolveLocalFirstAsync(
 	const isWin = process.platform === "win32";
 	const binName = isWin ? `${toolName}${windowsExt}` : toolName;
 
-	// 1. Local node_modules/.bin (project-installed)
+	// 1. Local node_modules/.bin (project-installed, trusted workspaces only)
 	const local = path.join(cwd, "node_modules", ".bin", binName);
-	if (fs.existsSync(local)) return { cmd: local, args: [] };
+	if (allowProjectLocalTools() && fs.existsSync(local)) return { cmd: local, args: [] };
 
 	// 2. Global PATH (already installed system-wide)
 	const globalCheck = await safeSpawnAsync(toolName, ["--version"], {

@@ -72,7 +72,7 @@
 		"vscode-jsonrpc": "^8.2.1"
 	},
 	"optionalDependencies": {
-		"tree-sitter-wasms": "npm:null@^0.11.0",
+		"tree-sitter-wasms": "0.1.13",
 		"web-tree-sitter": "^0.25.10"
 	},
 	"devDependencies": {

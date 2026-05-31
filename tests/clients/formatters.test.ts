@@ -94,14 +94,19 @@ async function withPathShim(
 
 let tmpDir: string;
 let cleanup: () => void;
+let previousTrustWorkspace: string | undefined;
 
 beforeEach(() => {
+	previousTrustWorkspace = process.env.PI_LENS_TRUST_WORKSPACE;
+	process.env.PI_LENS_TRUST_WORKSPACE = "1";
 	({ tmpDir, cleanup } = setupTestEnvironment("pi-lens-fmt-test-"));
 });
 
 afterEach(() => {
 	clearFormatterRuntimeState();
 	cleanup();
+	if (previousTrustWorkspace === undefined) delete process.env.PI_LENS_TRUST_WORKSPACE;
+	else process.env.PI_LENS_TRUST_WORKSPACE = previousTrustWorkspace;
 });
 
 // ---------------------------------------------------------------------------

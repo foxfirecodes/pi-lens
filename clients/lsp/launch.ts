@@ -19,6 +19,7 @@ import os from "node:os";
 import path from "node:path";
 import { isTestMode } from "../env-utils.js";
 import { getGlobalPiLensDir } from "../file-utils.js";
+import { buildToolEnvironment } from "../security-policy.js";
 
 export interface LSPProcess {
 	process: ChildProcess;
@@ -505,7 +506,7 @@ export async function launchLSP(
 	} = {},
 ): Promise<LSPProcess> {
 	const cwd = String(options.cwd ?? process.cwd());
-	const mergedEnv = { ...process.env, ...options.env };
+	const mergedEnv = buildToolEnvironment(options.env as NodeJS.ProcessEnv | undefined);
 	const augmentedPath = buildAugmentedPath(resolvePathValue(mergedEnv));
 	const env: NodeJS.ProcessEnv = {
 		...mergedEnv,
@@ -755,7 +756,7 @@ export async function launchViaPackageManager(
 		const shellCommand = `npx --no ${packageName}${argsStr ? ` ${argsStr}` : ""}`;
 
 		const cwd = String(options.cwd ?? process.cwd());
-		const mergedEnv = { ...process.env, ...options.env };
+		const mergedEnv = buildToolEnvironment(options.env as NodeJS.ProcessEnv | undefined);
 		const augmentedPath = buildAugmentedPath(resolvePathValue(mergedEnv));
 		const env: NodeJS.ProcessEnv = {
 			...mergedEnv,

@@ -53,6 +53,7 @@ const SCAN_TIMEOUT_MS = 30_000;
 
 export class JscpdClient {
 	private available: boolean | null = null;
+	private command: string | null = null;
 	private ensureInFlight: Promise<boolean> | null = null;
 	private inFlight = new Map<string, Promise<JscpdResult>>();
 	private log: (msg: string) => void;
@@ -141,6 +142,7 @@ export class JscpdClient {
 			try {
 				if (fs.existsSync(candidate)) {
 					this.available = true;
+					this.command = candidate;
 					return true;
 				}
 			} catch {
@@ -154,6 +156,7 @@ export class JscpdClient {
 		});
 		this.available = !result.error && result.status === 0;
 		if (this.available) {
+			this.command = "jscpd";
 			return true;
 		}
 
@@ -163,6 +166,7 @@ export class JscpdClient {
 
 		if (installedPath) {
 			this.available = true;
+			this.command = installedPath;
 			return true;
 		}
 
@@ -246,9 +250,8 @@ export class JscpdClient {
 
 		try {
 			const result = await safeSpawnAsync(
-				"npx",
+				this.command ?? "jscpd",
 				[
-					"jscpd",
 					".",
 					"--min-lines",
 					String(minLines),

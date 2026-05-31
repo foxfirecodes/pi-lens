@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { isTestMode } from "./env-utils.js";
 import { getGlobalPiLensDir } from "./file-utils.js";
+import { redactForPersistentLog } from "./security-policy.js";
 
 const LATENCY_LOG_DIR = getGlobalPiLensDir();
 const LATENCY_LOG_FILE = path.join(LATENCY_LOG_DIR, "latency.log");
@@ -44,7 +45,18 @@ export function logLatency(entry: LatencyEntry): void {
 	if (isTestMode()) {
 		return;
 	}
-	const line = `${JSON.stringify({ ts: new Date().toISOString(), ...entry })}\n`;
+	const sanitized: LatencyEntry = {
+		...entry,
+		filePath: entry.filePath
+			? redactForPersistentLog(path.relative(process.cwd(), entry.filePath), 200)
+			: entry.filePath,
+		fullPath: entry.fullPath ? "[redacted-full-path]" : undefined,
+		diagnostics: entry.diagnostics?.map((diagnostic) => ({
+			...diagnostic,
+			message: redactForPersistentLog(diagnostic.message, 160),
+		})),
+	};
+	const line = `${JSON.stringify({ ts: new Date().toISOString(), ...sanitized })}\n`;
 	try {
 		fs.appendFileSync(LATENCY_LOG_FILE, line);
 	} catch {}

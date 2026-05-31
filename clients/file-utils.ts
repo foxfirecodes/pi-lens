@@ -8,13 +8,16 @@ import * as path from "node:path";
 import { minimatch } from "minimatch";
 import { normalizeFilePath } from "./path-utils.js";
 import { safeSpawnAsync } from "./safe-spawn.js";
+import { allowLegacyProjectDataDir } from "./security-policy.js";
 
 /**
  * Return the directory where pi-lens stores project-specific data
  * (caches, indexes, worklogs, etc.).
  *
- * Default: reuse <project>/.pi-lens if it already exists, otherwise use
- * ~/.pi-lens/projects/<project-slug>
+ * Default: use ~/.pi-lens/projects/<project-slug>.
+ * Legacy opt-in: set PI_LENS_ALLOW_LEGACY_PROJECT_DATA_DIR=1 (or
+ * PI_LENS_TRUST_WORKSPACE=1) to reuse <project>/.pi-lens when it is a real
+ * directory, not a symlink.
  *
  * Override: set PILENS_DATA_DIR=/some/path — each project gets its own
  * subdirectory named after a sanitized form of its absolute path, e.g.
@@ -27,8 +30,15 @@ import { safeSpawnAsync } from "./safe-spawn.js";
 export function getProjectDataDir(cwd: string): string {
 	const legacyProjectDir = path.join(cwd, ".pi-lens");
 	const configuredBase = process.env.PILENS_DATA_DIR?.trim();
-	if (!configuredBase && fs.existsSync(legacyProjectDir)) {
-		return legacyProjectDir;
+	if (!configuredBase && allowLegacyProjectDataDir()) {
+		try {
+			const stat = fs.lstatSync(legacyProjectDir);
+			if (stat.isDirectory() && !stat.isSymbolicLink()) {
+				return legacyProjectDir;
+			}
+		} catch {
+			// Missing or inaccessible legacy dir; fall through to safe global dir.
+		}
 	}
 	const base =
 		configuredBase || path.join(os.homedir(), ".pi-lens", "projects");

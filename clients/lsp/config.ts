@@ -21,6 +21,10 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+import {
+	allowRepoLSPCommands,
+	buildToolEnvironment,
+} from "../security-policy.js";
 import { launchLSP } from "./launch.js";
 import {
 	createRootDetector,
@@ -97,9 +101,14 @@ export function createCustomServer(
 			? createRootDetector(config.rootMarkers)
 			: async () => process.cwd(),
 		async spawn(root) {
+			if (!allowRepoLSPCommands()) {
+				throw new Error(
+					`Repo-defined LSP server '${id}' is disabled by default. Set PI_LENS_TRUST_WORKSPACE=1 or PI_LENS_ALLOW_REPO_LSP_COMMANDS=1 for trusted workspaces.`,
+				);
+			}
 			const proc = await launchLSP(config.command, config.args ?? ["--stdio"], {
 				cwd: root,
-				env: config.env ? { ...process.env, ...config.env } : process.env,
+				env: buildToolEnvironment(config.env),
 			});
 			return { process: proc };
 		},
@@ -155,7 +164,7 @@ export async function initLSPConfig(cwd: string): Promise<void> {
 		const customServers: LSPServerInfo[] = [];
 		const disabledServerIds = new Set(config.disabledServers ?? []);
 
-		if (config.servers) {
+		if (config.servers && allowRepoLSPCommands()) {
 			for (const [id, serverConfig] of Object.entries(config.servers)) {
 				try {
 					const server = createCustomServer(serverConfig, id);
@@ -210,6 +219,7 @@ export function getServersForFileWithConfig(filePath: string): LSPServerInfo[] {
 
 export function resetLSPConfigStateForTests(): void {
 	workspaceConfigs.clear();
+	configInFlight.clear();
 }
 
 // Re-export with config support

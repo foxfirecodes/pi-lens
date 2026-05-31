@@ -17,6 +17,7 @@ import { getGlobalPiLensDir } from "../file-utils.js";
 import { KIND_EXTENSIONS } from "../file-kinds.js";
 import { ensureTool, getToolEnvironment } from "../installer/index.js";
 import { logLatency } from "../latency-logger.js";
+import { allowProjectLocalTools } from "../security-policy.js";
 import { type LSPProcess, launchLSP } from "./launch.js";
 import { normalizeMapKey } from "./path-utils.js";
 
@@ -409,6 +410,7 @@ async function resolveAndLaunch(
 
 function nodeBinCandidates(root: string, baseName: string): string[] {
 	const localBase = path.join(root, "node_modules", ".bin", baseName);
+	if (!allowProjectLocalTools()) return [baseName];
 	if (process.platform === "win32") {
 		return [`${localBase}.cmd`, `${localBase}.exe`, baseName];
 	}
@@ -712,6 +714,7 @@ export function NearestRoot(
 		const promise = (async (): Promise<string | undefined> => {
 			let currentDir = startDir;
 			const fsRoot = path.parse(currentDir).root;
+			const tempDir = path.resolve(os.tmpdir());
 			const stop = stopDir ? path.resolve(stopDir) : fsRoot;
 
 			while (true) {
@@ -741,13 +744,20 @@ export function NearestRoot(
 					}
 				}
 
-				// Check include patterns
-				for (const pattern of includePatterns) {
-					try {
-						await stat(path.join(currentDir, pattern));
-						return currentDir;
-					} catch {
-						/* not found */
+				// Check include patterns. Do not let a generic temp directory marker
+				// (for example /tmp/.git created by another test/tool) capture unrelated
+				// temporary workspaces.
+				const isTempDirOrAncestor =
+					currentDir !== fsRoot &&
+					(tempDir === currentDir || tempDir.startsWith(`${currentDir}${path.sep}`));
+				if (!isTempDirOrAncestor) {
+					for (const pattern of includePatterns) {
+						try {
+							await stat(path.join(currentDir, pattern));
+							return currentDir;
+						} catch {
+							/* not found */
+						}
 					}
 				}
 

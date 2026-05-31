@@ -19,6 +19,7 @@ import {
 import { runLogCleanup } from "./log-cleanup.js";
 import { setSessionLanguages } from "./widget-state.js";
 import { initLSPConfig, loadLSPConfig } from "./lsp/config.js";
+import { isUnderDir } from "./path-utils.js";
 import { getLSPService } from "./lsp/index.js";
 import type { LSPShutdownOptions } from "./lsp/client.js";
 import type { MetricsClient } from "./metrics-client.js";
@@ -157,8 +158,13 @@ async function igniteWarmFiles(
 		for (const relPath of warmFiles) {
 			if (!runtime.isCurrentSession(sessionGeneration)) return;
 			const filePath = path.isAbsolute(relPath)
-				? relPath
+				? path.resolve(relPath)
 				: path.resolve(cwd, relPath);
+			if (!isUnderDir(filePath, cwd)) {
+				dbg(`session_start lsp-warm: skipped outside workspace: ${relPath}`);
+				errors++;
+				continue;
+			}
 			if (!nodeFs.existsSync(filePath)) {
 				dbg(`session_start lsp-warm: not found: ${relPath}`);
 				errors++;

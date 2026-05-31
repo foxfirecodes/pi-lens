@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { RuleCache } from "../../../clients/cache/rule-cache.js";
+import { getProjectDataDir } from "../../../clients/file-utils.js";
 
 const cleanup: string[] = [];
 
@@ -89,8 +90,7 @@ describe("RuleCache", () => {
 		]);
 
 		const cacheFile = path.join(
-			cwd,
-			".pi-lens",
+			getProjectDataDir(cwd),
 			"cache",
 			"typescript-rules-v3.json",
 		);

@@ -330,15 +330,13 @@ export class SgRunner {
 		sessionDir: string;
 		configFile: string;
 	} {
-		const sessionDir = path.join(
-			os.tmpdir(),
-			`pi-lens-temp-${ruleId}-${Date.now()}`,
-		);
+		const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-temp-"));
+		const safeRuleId = ruleId.replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 120) || "rule";
 		const rulesSubdir = path.join(sessionDir, "rules");
 		const configFile = path.join(sessionDir, ".sgconfig.yml");
 		fs.mkdirSync(rulesSubdir, { recursive: true });
 		fs.writeFileSync(configFile, `ruleDirs:\n  - ./rules\n`);
-		fs.writeFileSync(path.join(rulesSubdir, `${ruleId}.yml`), ruleYaml);
+		fs.writeFileSync(path.join(rulesSubdir, `${safeRuleId}.yml`), ruleYaml);
 		return { sessionDir, configFile };
 	}
 

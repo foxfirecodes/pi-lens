@@ -67,7 +67,7 @@ import {
 	handleToolResult,
 } from "./clients/runtime-tool-result.js";
 import { cancelLSPIdleReset, handleTurnEnd } from "./clients/runtime-turn.js";
-import { isExternalOrVendorFile } from "./clients/path-utils.js";
+import { isExternalOrVendorFile, isUnderDir } from "./clients/path-utils.js";
 import { safeSpawnAsync } from "./clients/safe-spawn.js";
 import {
 	createStarterSemgrepConfig,
@@ -1355,25 +1355,45 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
-		// --- Read-Before-Edit Guard: check edits ---
-		// write = full replacement; no prior read needed (you're starting fresh).
-		// edit = partial modification; guard enforced to prevent blind overwrites.
+		// --- Read-Before-Edit Guard: check edits/writes ---
+		// write = full replacement. New files are allowed, but overwriting an
+		// existing file requires prior read context just like edit so prompt
+		// injection cannot bypass the guard by changing tool choice.
 		const isEditOnly = isToolCallEventType("edit", event);
-		const isWriteOrEdit = isToolCallEventType("write", event) || isEditOnly;
+		const isWriteOnly = isToolCallEventType("write", event);
+		const isWriteOrEdit = isWriteOnly || isEditOnly;
 
-		// Track any Write so recordWritten can inject a synthetic read afterward.
-		// The agent authored the content (new or overwritten), so it trivially "knows" the file.
 		if (
-			!isEditOnly &&
 			isWriteOrEdit &&
 			filePath &&
-			!getLensFlag("no-read-guard")
+			!getLensFlag("allow-external-write") &&
+			!isUnderDir(filePath, runtime.projectRoot)
 		) {
-			runtime.readGuard.noteCreatedFile(
-				filePath,
-				runtime.turnIndex,
-				runtime.peekWriteIndex(),
-			);
+			return {
+				block: true,
+				reason: `🔴 BLOCKED — Refusing to modify path outside project root\n\nTarget: ${filePath}\nProject root: ${runtime.projectRoot}\n\nSet the lens flag \`allow-external-write\` only for an explicitly trusted operation.`,
+			};
+		}
+
+		if (
+			isWriteOnly &&
+			filePath &&
+			!getLensFlag("no-read-guard") &&
+			!isExternalOrVendor
+		) {
+			const isNewFile = runtime.readGuard.isNewFile(filePath);
+			if (isNewFile) {
+				runtime.readGuard.noteCreatedFile(
+					filePath,
+					runtime.turnIndex,
+					runtime.peekWriteIndex(),
+				);
+			} else {
+				const verdict = runtime.readGuard.checkEdit(filePath);
+				if (verdict.action === "block") {
+					return { block: true, reason: verdict.reason };
+				}
+			}
 		}
 
 		// --- Indentation mismatch correction ---

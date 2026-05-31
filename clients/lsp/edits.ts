@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { uriToPath } from "./path-utils.js";
+import { isUnderDir, uriToPath } from "./path-utils.js";
 
 export interface LSPPosition {
 	line: number;
@@ -174,6 +174,99 @@ function relativeToCwd(filePath: string, cwd: string): string {
 	return rel.replace(/\\/g, "/");
 }
 
+function assertFileUri(uri: string): void {
+	try {
+		const parsed = new URL(uri);
+		if (parsed.protocol !== "file:") {
+			throw new Error(`unsupported URI scheme '${parsed.protocol}'`);
+		}
+	} catch (err) {
+		throw new Error(
+			`LSP workspace edit target must be a file:// URI (${err instanceof Error ? err.message : String(err)})`,
+		);
+	}
+}
+
+async function canonicalizeForContainment(filePath: string): Promise<string> {
+	try {
+		return await fs.realpath(filePath);
+	} catch {
+		let current = path.dirname(filePath);
+		const missing: string[] = [path.basename(filePath)];
+		while (true) {
+			try {
+				const realParent = await fs.realpath(current);
+				return path.join(realParent, ...missing.reverse());
+			} catch {
+				const parent = path.dirname(current);
+				if (parent === current) return path.resolve(filePath);
+				missing.push(path.basename(current));
+				current = parent;
+			}
+		}
+	}
+}
+
+async function assertInsideWorkspace(filePath: string, cwd: string): Promise<void> {
+	const workspaceRoot = await canonicalizeForContainment(path.resolve(cwd));
+	const target = await canonicalizeForContainment(filePath);
+	if (!isUnderDir(target, workspaceRoot)) {
+		throw new Error(
+			`LSP workspace edit target escapes workspace: ${target} is outside ${workspaceRoot}`,
+		);
+	}
+}
+
+async function validateWorkspaceEditTargets(
+	edit: {
+		changes?: Record<string, unknown[]>;
+		documentChanges?: unknown[];
+	},
+	cwd: string,
+): Promise<void> {
+	const textEditsByUri = flattenWorkspaceTextEdits(edit);
+	for (const uri of textEditsByUri.keys()) {
+		assertFileUri(uri);
+		await assertInsideWorkspace(uriToPath(uri), cwd);
+	}
+
+	for (const change of edit.documentChanges ?? []) {
+		if (typeof change !== "object" || change === null || !("kind" in change))
+			continue;
+		const kind = (change as { kind?: unknown }).kind;
+		if (kind === "create" && typeof (change as CreateFileOp).uri === "string") {
+			const uri = (change as CreateFileOp).uri;
+			assertFileUri(uri);
+			await assertInsideWorkspace(uriToPath(uri), cwd);
+		} else if (
+			kind === "rename" &&
+			typeof (change as RenameFileOp).oldUri === "string" &&
+			typeof (change as RenameFileOp).newUri === "string"
+		) {
+			const oldUri = (change as RenameFileOp).oldUri;
+			const newUri = (change as RenameFileOp).newUri;
+			assertFileUri(oldUri);
+			assertFileUri(newUri);
+			await assertInsideWorkspace(uriToPath(oldUri), cwd);
+			await assertInsideWorkspace(uriToPath(newUri), cwd);
+		} else if (
+			kind === "delete" &&
+			typeof (change as DeleteFileOp).uri === "string"
+		) {
+			const uri = (change as DeleteFileOp).uri;
+			assertFileUri(uri);
+			const filePath = uriToPath(uri);
+			await assertInsideWorkspace(filePath, cwd);
+			const stat = await fs.lstat(filePath).catch(() => undefined);
+			if (stat?.isDirectory()) {
+				throw new Error(
+					`Refusing LSP workspace edit directory delete: ${relativeToCwd(filePath, cwd)}`,
+				);
+			}
+		}
+	}
+}
+
 export function summarizeWorkspaceEdit(
 	edit: {
 		changes?: Record<string, unknown[]>;
@@ -227,6 +320,8 @@ export async function applyWorkspaceEdit(
 	const touchedFiles = new Set<string>();
 	const textEditsByUri = flattenWorkspaceTextEdits(edit);
 
+	await validateWorkspaceEditTargets(edit, cwd);
+
 	try {
 		for (const [uri, edits] of textEditsByUri) {
 			const filePath = uriToPath(uri);
@@ -272,7 +367,7 @@ export async function applyWorkspaceEdit(
 				typeof (change as DeleteFileOp).uri === "string"
 			) {
 				const filePath = uriToPath((change as DeleteFileOp).uri);
-				await fs.rm(filePath, { recursive: true, force: true });
+				await fs.rm(filePath, { force: true });
 				touchedFiles.add(filePath);
 				descriptions.push(`Deleted ${relativeToCwd(filePath, cwd)}`);
 			}

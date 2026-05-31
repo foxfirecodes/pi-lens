@@ -8,6 +8,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { isTestMode } from "./env-utils.js";
+import { redactForPersistentLog } from "./security-policy.js";
 
 export interface DiagnosticEntry {
 	// When
@@ -112,7 +113,13 @@ export function createDiagnosticLogger(): DiagnosticLogger {
 			if (isTestMode()) {
 				return;
 			}
-			pending.push(entry);
+			pending.push({
+				...entry,
+				filePath: redactForPersistentLog(path.relative(process.cwd(), entry.filePath || ""), 200),
+				message: redactForPersistentLog(entry.message || "", 240),
+				model: redactForPersistentLog(entry.model || "", 80),
+				sessionId: redactForPersistentLog(entry.sessionId || "", 80),
+			});
 			writePending(); // async, non-blocking
 		},
 

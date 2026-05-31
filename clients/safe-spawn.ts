@@ -15,6 +15,7 @@
  */
 
 import { type SpawnOptions, spawn, spawnSync } from "node:child_process";
+import { buildToolEnvironment } from "./security-policy.js";
 
 export interface SpawnResult {
 	stdout: string;
@@ -27,6 +28,11 @@ export interface SafeSpawnOptions {
 	timeout?: number;
 	cwd?: string;
 	env?: NodeJS.ProcessEnv;
+	/**
+	 * Use the caller-supplied environment without pi-lens secret redaction.
+	 * Keep false for repository/tool subprocesses; reserve for trusted internal probes.
+	 */
+	trustedEnv?: boolean;
 	signal?: AbortSignal;
 }
 
@@ -41,6 +47,10 @@ export interface SafeSpawnOptions {
 function cmdEscapeArg(arg: string): string {
 	if (!/[\s"&|<>^()]/.test(arg)) return arg;
 	return `"${arg.replace(/"/g, '""')}"`;
+}
+
+function cmdEscapeCommand(command: string): string {
+	return cmdEscapeArg(command);
 }
 
 // ============================================================================
@@ -89,12 +99,14 @@ export async function safeSpawnAsync(
 		// Bake args into the command string when shell:true to avoid DEP0190.
 		const isWindows = process.platform === "win32";
 		const spawnCmd = isWindows
-			? [command, ...args.map(cmdEscapeArg)].join(" ")
+			? [cmdEscapeCommand(command), ...args.map(cmdEscapeArg)].join(" ")
 			: command;
 		const spawnArgs = isWindows ? [] : args;
 		const child = spawn(spawnCmd, spawnArgs, {
 			cwd: options?.cwd,
-			env: { ...process.env, ...options?.env },
+			env: options?.trustedEnv
+				? { ...process.env, ...options?.env }
+				: buildToolEnvironment(options?.env),
 			windowsHide: true,
 			shell: isWindows,
 		});
@@ -262,7 +274,7 @@ function escapeWindowsArg(arg: string): string {
  */
 function buildWindowsCommand(command: string, args: string[]): string {
 	const escapedArgs = args.map(escapeWindowsArg).join(" ");
-	return `${command} ${escapedArgs}`;
+	return `${cmdEscapeCommand(command)} ${escapedArgs}`;
 }
 
 /**
@@ -284,6 +296,9 @@ export function safeSpawn(
 		const fullCommand = buildWindowsCommand(command, args);
 		const result = spawnSync(fullCommand, {
 			...(options as SpawnOptions),
+			env: options?.trustedEnv
+				? { ...process.env, ...options?.env }
+				: buildToolEnvironment(options?.env),
 			encoding: "utf-8",
 			shell: true,
 			windowsHide: true,
@@ -299,6 +314,9 @@ export function safeSpawn(
 
 	const result = spawnSync(command, args, {
 		...(options as SpawnOptions),
+		env: options?.trustedEnv
+			? { ...process.env, ...options?.env }
+			: buildToolEnvironment(options?.env),
 		encoding: "utf-8",
 		shell: false,
 		windowsHide: true,

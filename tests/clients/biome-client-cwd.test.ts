@@ -1,10 +1,16 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BiomeClient } from "../../clients/biome-client.js";
 
 const tmpDirs: string[] = [];
+let previousTrustWorkspace: string | undefined;
+
+beforeEach(() => {
+	previousTrustWorkspace = process.env.PI_LENS_TRUST_WORKSPACE;
+	process.env.PI_LENS_TRUST_WORKSPACE = "1";
+});
 
 afterEach(() => {
 	while (tmpDirs.length > 0) {
@@ -14,6 +20,8 @@ afterEach(() => {
 		}
 	}
 	vi.restoreAllMocks();
+	if (previousTrustWorkspace === undefined) delete process.env.PI_LENS_TRUST_WORKSPACE;
+	else process.env.PI_LENS_TRUST_WORKSPACE = previousTrustWorkspace;
 });
 
 function setupMonorepo(): {

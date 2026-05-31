@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	createAvailabilityChecker,
 	resolveCommandArgsWithInstallFallback,
@@ -22,12 +22,20 @@ vi.mock("../../../../clients/installer/index.js", () => ({
 }));
 
 describe("runner-helpers availability checker", () => {
+	let previousTrustWorkspace: string | undefined;
+
 	beforeEach(async () => {
+		previousTrustWorkspace = process.env.PI_LENS_TRUST_WORKSPACE;
+		process.env.PI_LENS_TRUST_WORKSPACE = "1";
 		const safeSpawnMod = await import("../../../../clients/safe-spawn.js");
 		const installerMod = await import("../../../../clients/installer/index.js");
 		vi.mocked(safeSpawnMod.safeSpawn).mockReset();
 		vi.mocked(safeSpawnMod.safeSpawnAsync).mockReset();
 		vi.mocked(installerMod.ensureTool).mockReset();
+	});
+	afterEach(() => {
+		if (previousTrustWorkspace === undefined) delete process.env.PI_LENS_TRUST_WORKSPACE;
+		else process.env.PI_LENS_TRUST_WORKSPACE = previousTrustWorkspace;
 	});
 
 	it("resolves local node_modules/.bin commands before global fallback", () => {

@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { isTestMode } from "./env-utils.js";
 import { getGlobalPiLensDir } from "./file-utils.js";
+import { redactForPersistentLog } from "./security-policy.js";
 
 const READ_GUARD_LOG_DIR = getGlobalPiLensDir();
 const READ_GUARD_LOG_FILE = path.join(READ_GUARD_LOG_DIR, "read-guard.log");
@@ -83,11 +84,27 @@ function rotateIfNeeded(): void {
 	}
 }
 
+function sanitizeMetadata(metadata?: Record<string, unknown>): Record<string, unknown> | undefined {
+	if (!metadata) return undefined;
+	return Object.fromEntries(
+		Object.entries(metadata).map(([key, value]) => [
+			key,
+			typeof value === "string" ? redactForPersistentLog(value, 160) : value,
+		]),
+	);
+}
+
 export function logReadGuardEvent(entry: ReadGuardLogEntry): void {
 	if (isTestMode() || !shouldLogEvent(entry.event)) {
 		return;
 	}
-	const line = `${JSON.stringify({ ts: new Date().toISOString(), ...entry })}\n`;
+	const sanitized: ReadGuardLogEntry = {
+		...entry,
+		filePath: redactForPersistentLog(path.relative(process.cwd(), entry.filePath), 200),
+		symbol: entry.symbol ? redactForPersistentLog(entry.symbol, 80) : undefined,
+		metadata: sanitizeMetadata(entry.metadata),
+	};
+	const line = `${JSON.stringify({ ts: new Date().toISOString(), ...sanitized })}\n`;
 	try {
 		rotateIfNeeded();
 		fs.appendFileSync(READ_GUARD_LOG_FILE, line);
